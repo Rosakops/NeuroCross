@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NeuroCross · Triage interactivo de nanotransportadores</title>
+<!--
+  ==========================================================================
+  Triage interactivo de nanotransportadores — proyecto NeuroCross
+  ==========================================================================
+  Web app estática, SIN backend. Corre el motor de física real
+  (envolvimiento/rutas.py, nanotransportador.py, envolvimiento_core.py,
+  glicocalix.py) dentro del navegador vía Pyodide (Python + NumPy compilados
+  a WebAssembly, cargados desde CDN). No calcula nada en JS: JS solo arma el
+  formulario, llama al Python cargado y pinta el JSON que ese Python
+  devuelve. La física, los umbrales y las compuertas siguen viviendo
+  EXCLUSIVAMENTE en los .py del motor — esta página no los reescribe.
+
+  Es una pieza NUEVA, aparte del reporte estático de /web/ (que sigue
+  generándose con construir_web.py y no se toca aquí).
+
+  CÓMO SERVIRLA: necesita HTTP, no abrir el archivo con file:// (el fetch()
+  de los .py del motor lo bloquea CORS). Desde la raíz del repo:
+      python3 -m http.server 8000
+  y abrir  http://localhost:8000/triage/
+
+  Referencia de carga de Pyodide: https://pyodide.org/en/stable/usage/quickstart.html
+  ==========================================================================
+-->
+<style>
+:root{
+  --tinta:#1c1f24; --suave:#5b6470; --linea:#e3e6ea; --fondo:#fbfcfd;
+  --papel:#ffffff; --verde:#2e7d32; --verdefondo:#eaf5ec;
+  --rojo:#c62828; --rojofondo:#fbeaea;
+  --gris:#78848f; --grisfondo:#eef1f4;
+  --azul:#1565c0; --avisofondo:#fff8ec; --aviso:#b26a00;
+  --ancho:min(920px, 100% - 2.4rem);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--fondo); color:var(--tinta);
+  font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.envoltorio{width:var(--ancho); margin-inline:auto}
+
+header.principal{background:linear-gradient(160deg,#12213a,#1f3b63); color:#fff;
+  padding:2.6rem 0 2.2rem}
+header.principal .expediente{font-size:.75rem; letter-spacing:.16em; text-transform:uppercase;
+  color:#9fc4f0; margin:0 0 .6rem}
+header.principal h1{font-size:1.7rem; line-height:1.3; margin:0 0 .5rem; font-weight:650}
+header.principal .sub{color:#c9dcf3; margin:0; font-size:.98rem; max-width:70ch}
+
+main{padding:2rem 0 4rem}
+section{margin-bottom:1.6rem}
+
+.tarjeta{background:var(--papel); border:1px solid var(--linea); border-radius:12px;
+  padding:1.3rem 1.4rem}
+h2{font-size:1.05rem; margin:0 0 .9rem}
+h3{font-size:.95rem; margin:1.1rem 0 .5rem}
+
+/* ---- estado de carga ---- */
+#estado{display:flex; align-items:center; gap:.6rem; font-size:.92rem; color:var(--suave)}
+#estado .punto{width:.6rem; height:.6rem; border-radius:50%; background:var(--gris);
+  flex:none}
+#estado.cargando .punto{background:var(--azul); animation:parpadeo 1.1s infinite}
+#estado.listo .punto{background:var(--verde)}
+#estado.error{color:var(--rojo)}
+#estado.error .punto{background:var(--rojo)}
+@keyframes parpadeo{50%{opacity:.25}}
+.ayuda-servidor{display:none; margin-top:.7rem; font-size:.85rem; color:var(--suave)}
+.ayuda-servidor code{background:var(--grisfondo); padding:.1rem .4rem; border-radius:5px}
+#estado.error + .ayuda-servidor{display:block}
+
+/* ---- flujo en cascada ---- */
+fieldset{border:none; padding:0; margin:0 0 1.1rem}
+legend{font-weight:600; font-size:.92rem; margin-bottom:.5rem; padding:0}
+.opciones{display:flex; flex-wrap:wrap; gap:.5rem}
+.opciones label{
+  border:1px solid var(--linea); border-radius:9px; padding:.55rem .9rem;
+  cursor:pointer; font-size:.9rem; user-select:none; background:var(--papel);
+}
+.opciones input{margin-right:.4rem}
+.opciones label:has(input:checked){border-color:var(--azul); background:#eef4fc; font-weight:600}
+.opciones label.deshabilitada{opacity:.45; cursor:not-allowed}
+.opciones label.deshabilitada input{pointer-events:none}
+
+.mensaje-no-soportado{
+  background:var(--avisofondo); border:1px solid #f0d9ae; color:var(--aviso);
+  border-radius:9px; padding:.7rem .9rem; font-size:.88rem; margin-top:.4rem;
+}
+
+.campo{margin-bottom:.85rem}
+.campo label{display:block; font-size:.85rem; font-weight:600; margin-bottom:.3rem}
+.campo .pista{font-size:.78rem; color:var(--suave); font-weight:400; margin-left:.3rem}
+.campo input{
+  width:100%; padding:.55rem .7rem; border:1px solid var(--linea); border-radius:8px;
+  font-size:.92rem; background:var(--fondo); color:var(--tinta);
+}
+.campo input:focus{outline:2px solid var(--azul); outline-offset:1px}
+.rejilla-campos{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:0 1rem}
+
+button.evaluar{
+  background:var(--azul); color:#fff; border:none; border-radius:9px;
+  padding:.75rem 1.4rem; font-size:.95rem; font-weight:600; cursor:pointer;
+  margin-top:.4rem;
+}
+button.evaluar:disabled{background:var(--gris); cursor:not-allowed}
+button.evaluar:not(:disabled):hover{background:#0e4a94}
+
+/* ---- leyenda ---- */
+.leyenda{display:flex; flex-wrap:wrap; gap:1.4rem; font-size:.83rem; color:var(--suave)}
+.leyenda .grupo{display:flex; flex-direction:column; gap:.35rem}
+.leyenda .grupo strong{color:var(--tinta); font-size:.8rem}
+.badge{display:inline-flex; align-items:center; gap:.35rem; padding:.2rem .55rem;
+  border-radius:999px; font-size:.78rem; font-weight:700; white-space:nowrap}
+.badge.PASA{background:var(--verdefondo); color:var(--verde)}
+.badge.FALLA{background:var(--rojofondo); color:var(--rojo)}
+.badge.DESCONOCIDA{background:var(--grisfondo); color:var(--gris)}
+.badge.veredicto-excluida{background:var(--rojofondo); color:var(--rojo)}
+.badge.veredicto-no-excluida{background:var(--verdefondo); color:var(--verde)}
+.badge.veredicto-no-evaluable{background:var(--avisofondo); color:var(--aviso)}
+
+.confianza{display:inline-flex; align-items:center; gap:.3rem; padding:.15rem .5rem;
+  border-radius:999px; font-size:.72rem; font-weight:600; border:1px solid transparent}
+.confianza.validada{background:#eaf2fb; color:var(--azul); border-color:#bcd7f5}
+.confianza.analogia{background:var(--avisofondo); color:var(--aviso); border-color:#f0d9ae}
+.confianza.sinfisica{background:var(--grisfondo); color:var(--gris); border-color:var(--linea)}
+
+/* ---- resultados ---- */
+.ruta{border:1px solid var(--linea); border-radius:11px; padding:1rem 1.1rem; margin-bottom:.9rem}
+.ruta .cabeza{display:flex; align-items:center; justify-content:space-between;
+  flex-wrap:wrap; gap:.5rem; margin-bottom:.7rem}
+.ruta .cabeza h3{margin:0; font-size:.96rem}
+.compuerta{border-top:1px solid var(--linea); padding:.65rem 0}
+.compuerta:first-of-type{border-top:none}
+.compuerta .fila-1{display:flex; align-items:center; justify-content:space-between;
+  flex-wrap:wrap; gap:.4rem .6rem}
+.compuerta .nombre{font-weight:600; font-size:.9rem}
+.compuerta .badges{display:flex; gap:.4rem; align-items:center}
+.compuerta .datos{font-size:.82rem; color:var(--suave); margin-top:.3rem}
+.compuerta .motivo{font-size:.83rem; color:var(--tinta); margin-top:.35rem; line-height:1.5}
+.compuerta .advertencia{font-size:.8rem; color:var(--aviso); margin-top:.3rem; line-height:1.5}
+.compuerta .fuente{font-size:.76rem; color:var(--suave); margin-top:.25rem; font-style:italic}
+
+.disclaimer{font-size:.8rem; color:var(--suave); border-top:1px solid var(--linea);
+  padding-top:.9rem; margin-top:1rem; line-height:1.55}
+
+#resultados{scroll-margin-top:1rem}
+
+.oculto{display:none !important}
+</style>
+</head>
+<body>
+
+<header class="principal">
+  <div class="envoltorio">
+    <p class="expediente">NeuroCross · JC155 · SENACYT</p>
+    <h1>Triage interactivo de nanotransportadores</h1>
+    <p class="sub">Corre el simulador de compuertas físicas de la BHE directamente en tu
+      navegador (Pyodide/WebAssembly, sin servidor). Elige categoría, subtipo y
+      parámetros, y evalúa las cuatro rutas de cruce.</p>
+  </div>
+</header>
+
+<main class="envoltorio">
+
+  <section class="tarjeta" id="seccion-carga">
+    <div id="estado" class="cargando"><span class="punto"></span> <span id="estado-texto">Cargando Pyodide…</span></div>
+    <p class="ayuda-servidor">Esta página necesita servirse por HTTP (no abrir el archivo
+      directamente con <code>file://</code>): el navegador bloquea la carga de los
+      <code>.py</code> del motor por CORS. Desde la raíz del repositorio, ejecuta
+      <code>python3 -m http.server 8000</code> y abre
+      <code>http://localhost:8000/triage/</code>.</p>
+  </section>
+
+  <section class="tarjeta oculto" id="seccion-flujo">
+    <h2>1 · 2 · 3 — Categoría, subtipo y parámetros</h2>
+
+    <fieldset id="fieldset-categoria">
+      <legend>Categoría del nanotransportador</legend>
+      <div class="opciones" id="opciones-categoria"></div>
+    </fieldset>
+
+    <fieldset id="fieldset-subtipo" class="oculto">
+      <legend>Subtipo</legend>
+      <div class="opciones" id="opciones-subtipo"></div>
+      <div class="mensaje-no-soportado oculto" id="mensaje-sin-subtipos"></div>
+    </fieldset>
+
+    <fieldset id="fieldset-parametros" class="oculto">
+      <legend>Parámetros del diseño</legend>
+      <div class="campo">
+        <label for="campo-nombre">Nombre del diseño</label>
+        <input type="text" id="campo-nombre" value="Candidato 1">
+      </div>
+      <div class="rejilla-campos" id="rejilla-parametros"></div>
+    </fieldset>
+
+    <button class="evaluar" id="boton-evaluar" disabled>Evaluar las cuatro rutas</button>
+    <div class="mensaje-no-soportado oculto" id="mensaje-error-evaluacion"></div>
+  </section>
+
+  <section class="tarjeta oculto" id="seccion-leyenda">
+    <h2>Cómo leer el resultado</h2>
+    <div class="leyenda">
+      <div class="grupo">
+        <strong>Veredicto de la compuerta</strong>
+        <span class="badge PASA">PASA</span>
+        <span class="badge FALLA">FALLA</span>
+        <span class="badge DESCONOCIDA">DESCONOCIDA</span>
+      </div>
+      <div class="grupo">
+        <strong>Veredicto de la ruta</strong>
+        <span class="badge veredicto-no-excluida">NO EXCLUIDA — candidato (débil)</span>
+        <span class="badge veredicto-excluida">EXCLUIDA — no puede (firme)</span>
+        <span class="badge veredicto-no-evaluable">NO EVALUABLE — faltan datos</span>
+      </div>
+      <div class="grupo">
+        <strong>Confianza de la compuerta</strong>
+        <span class="confianza validada">● validada con contraste real</span>
+        <span class="confianza analogia">◐ prestada por analogía</span>
+        <span class="confianza sinfisica">○ sin física implementada</span>
+      </div>
+    </div>
+    <p class="disclaimer">
+      La confianza describe qué tan sólido es el anclaje de la <em>compuerta</em>
+      (si reproduce un dato medido directamente sobre este sistema, si toma prestado un
+      criterio de otro sistema o de otra convención por analogía, o si todavía no calcula
+      nada y solo declara un hueco de dato) — no cambia el veredicto PASA/FALLA/DESCONOCIDA
+      de ningún caso concreto. Es una clasificación editorial derivada de lo que cada
+      compuerta ya documentaba en <code>rutas.py</code>, confirmada por Jhovan.
+      Este simulador solo puede EXCLUIR con firmeza; "NO EXCLUIDA" es una afirmación débil
+      (candidato, no predicción de éxito) y no debe citarse como referencia definitiva.
+    </p>
+  </section>
+
+  <section id="resultados" class="oculto"></section>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+"use strict";
+
+// Los cuatro archivos del motor de física, en orden de dependencia (los dos
+// primeros no dependen de nada más del proyecto; rutas.py importa a los
+// otros tres). dataclasses/typing son librería estándar de Python: Pyodide
+// ya las trae, no hace falta empaquetarlas.
+const ARCHIVOS_MOTOR = [
+  "nanotransportador.py",
+  "glicocalix.py",
+  "envolvimiento_core.py",
+  "rutas.py",
+];
+const RUTA_MOTOR = "../envolvimiento/";
+
+// Etiquetas de UI para las categorías. Los VALORES vienen siempre del
+// catálogo real que expone Python (catalogo_json()); esto solo traduce el
+// nombre interno a algo legible. No es una lista propia de categorías.
+const ETIQUETA_CATEGORIA = {
+  organico: "Orgánico",
+  inorganico: "Inorgánico",
+  hibrido: "Híbrido",
+};
+
+// Metadatos de UI (etiqueta, unidad, valor por defecto) para los parámetros
+// que YA existen como campos de rutas.Diseno. No son parámetros nuevos: son
+// los mismos nombres que reporta nanotransportador.SUBTIPOS_SOPORTADOS
+// (ver parametros de la ficha "liposoma"), con una etiqueta legible.
+const CAMPOS_CONOCIDOS = {
+  diametro_nm: {etiqueta: "Diámetro", unidad: "nm", paso: "0.1", requerido: true,
+                defecto: 100},
+  zeta_mV: {etiqueta: "Potencial zeta (ζ)", unidad: "mV", paso: "0.1", requerido: true,
+            defecto: -5},
+  peg_nm: {etiqueta: "Espesor de PEG", unidad: "nm", paso: "0.1", requerido: false,
+           defecto: 0},
+  farmaco_diametro_nm: {etiqueta: "Diámetro del fármaco (fingolimod)", unidad: "nm",
+                        paso: "0.001", requerido: false, defecto: 1.683},
+};
+
+const NOMBRES_RUTA_CORTOS = {
+  "A · pasiva (adhesión y envolvimiento)": "A · Pasiva",
+  "B · celular (macrófago de Troya)": "B · Celular (macrófago)",
+  "C · adsortiva (carga positiva)": "C · Adsortiva",
+  "D · mediada por receptor": "D · Mediada por receptor",
+};
+
+let pyodide = null;
+let catalogo = null;
+let categoriaElegida = null;
+let subtipoElegido = null;
+
+const $ = (id) => document.getElementById(id);
+
+function fijarEstado(texto, clase) {
+  const el = $("estado");
+  el.className = clase;
+  $("estado-texto").textContent = texto;
+}
+
+async function iniciar() {
+  try {
+    fijarEstado("Cargando Pyodide…", "cargando");
+    pyodide = await loadPyodide();
+
+    fijarEstado("Cargando NumPy…", "cargando");
+    await pyodide.loadPackage("numpy");
+
+    fijarEstado("Cargando el motor de física (rutas.py y módulos)…", "cargando");
+    for (const archivo of ARCHIVOS_MOTOR) {
+      const resp = await fetch(RUTA_MOTOR + archivo);
+      if (!resp.ok) {
+        throw new Error(`no se pudo cargar ${archivo} (HTTP ${resp.status})`);
+      }
+      const texto = await resp.text();
+      pyodide.FS.writeFile(archivo, texto);
+    }
+
+    pyodide.runPython(`
+import sys
+if "." not in sys.path:
+    sys.path.insert(0, ".")
+import rutas as R
+    `);
+
+    catalogo = JSON.parse(pyodide.runPython("R.catalogo_json()"));
+
+    fijarEstado("Motor de física cargado. Listo para evaluar.", "listo");
+    $("seccion-flujo").classList.remove("oculto");
+    $("seccion-leyenda").classList.remove("oculto");
+    poblarCategorias();
+  } catch (err) {
+    console.error(err);
+    fijarEstado("No se pudo cargar el motor de física: " + err.message, "error");
+  }
+}
+
+function poblarCategorias() {
+  const cont = $("opciones-categoria");
+  cont.innerHTML = "";
+  for (const cat of catalogo.categorias) {
+    const id = `cat-${cat}`;
+    const label = document.createElement("label");
+    label.innerHTML = `<input type="radio" name="categoria" id="${id}" value="${cat}">
+      ${ETIQUETA_CATEGORIA[cat] || cat}`;
+    label.querySelector("input").addEventListener("change", () => elegirCategoria(cat));
+    cont.appendChild(label);
+  }
+}
+
+function elegirCategoria(cat) {
+  categoriaElegida = cat;
+  subtipoElegido = null;
+  $("fieldset-subtipo").classList.remove("oculto");
+  $("fieldset-parametros").classList.add("oculto");
+  $("boton-evaluar").disabled = true;
+
+  const subtipos = catalogo.subtipos_por_categoria[cat] || [];
+  const contOpciones = $("opciones-subtipo");
+  const msgVacio = $("mensaje-sin-subtipos");
+  contOpciones.innerHTML = "";
+
+  if (subtipos.length === 0) {
+    contOpciones.classList.add("oculto");
+    msgVacio.classList.remove("oculto");
+    msgVacio.textContent =
+      `La categoría "${ETIQUETA_CATEGORIA[cat] || cat}" no tiene ningún subtipo ` +
+      `soportado todavía. La lista la entregan Jhovan y Kiel por Bridge ` +
+      `(Bridge/pending.md); mientras no llegue, esta categoría no acepta ` +
+      `parámetros libres — no hay compuertas calibradas para evaluarlos.`;
+    return;
+  }
+
+  contOpciones.classList.remove("oculto");
+  msgVacio.classList.add("oculto");
+  for (const {subtipo} of subtipos) {
+    const id = `sub-${subtipo}`;
+    const label = document.createElement("label");
+    label.innerHTML = `<input type="radio" name="subtipo" id="${id}" value="${subtipo}">
+      ${subtipo}`;
+    label.querySelector("input").addEventListener("change", () => elegirSubtipo(subtipo));
+    contOpciones.appendChild(label);
+  }
+}
+
+function elegirSubtipo(subtipo) {
+  subtipoElegido = subtipo;
+  const ficha = (catalogo.subtipos_por_categoria[categoriaElegida] || [])
+    .find((f) => f.subtipo === subtipo);
+  renderizarParametros(ficha ? ficha.parametros : []);
+  $("fieldset-parametros").classList.remove("oculto");
+  $("boton-evaluar").disabled = false;
+}
+
+function renderizarParametros(parametros) {
+  const cont = $("rejilla-parametros");
+  cont.innerHTML = "";
+  for (const nombreCampo of parametros) {
+    const meta = CAMPOS_CONOCIDOS[nombreCampo] || {
+      etiqueta: nombreCampo, unidad: "", paso: "any", requerido: false, defecto: "",
+    };
+    const div = document.createElement("div");
+    div.className = "campo";
+    div.innerHTML = `
+      <label for="param-${nombreCampo}">${meta.etiqueta}
+        ${meta.unidad ? `<span class="pista">(${meta.unidad})</span>` : ""}
+      </label>
+      <input type="number" step="${meta.paso}" id="param-${nombreCampo}"
+             data-campo="${nombreCampo}" value="${meta.defecto}"
+             ${meta.requerido ? "required" : ""}>
+    `;
+    cont.appendChild(div);
+  }
+}
+
+function leerParametros() {
+  const params = {nombre: $("campo-nombre").value.trim() || "Candidato"};
+  for (const input of document.querySelectorAll("#rejilla-parametros input")) {
+    const campo = input.dataset.campo;
+    const valor = input.value.trim();
+    if (valor === "") continue;
+    params[campo] = Number(valor);
+  }
+  return params;
+}
+
+function evaluar() {
+  $("mensaje-error-evaluacion").classList.add("oculto");
+  let params;
+  try {
+    params = leerParametros();
+  } catch (err) {
+    mostrarErrorEvaluacion(err.message);
+    return;
+  }
+
+  pyodide.globals.set("_categoria", categoriaElegida);
+  pyodide.globals.set("_subtipo", subtipoElegido);
+  pyodide.globals.set("_params_json", JSON.stringify(params));
+  const salida = pyodide.runPython("R.evaluar_json(_categoria, _subtipo, _params_json)");
+  const resultado = JSON.parse(salida);
+
+  if (resultado.error) {
+    mostrarErrorEvaluacion(resultado.error);
+    return;
+  }
+  renderizarResultados(resultado);
+}
+
+function mostrarErrorEvaluacion(texto) {
+  const el = $("mensaje-error-evaluacion");
+  el.textContent = texto;
+  el.classList.remove("oculto");
+}
+
+function claseVeredicto(v) {
+  if (v === "EXCLUIDA") return "veredicto-excluida";
+  if (v === "NO EXCLUIDA") return "veredicto-no-excluida";
+  return "veredicto-no-evaluable";
+}
+
+function claseConfianza(c) {
+  if (c === "validada con contraste real") return {clase: "validada", icono: "●"};
+  if (c === "prestada por analogía (sin contraste propio)") return {clase: "analogia", icono: "◐"};
+  return {clase: "sinfisica", icono: "○"};
+}
+
+function renderizarResultados(resultado) {
+  const cont = $("resultados");
+  cont.innerHTML = "";
+  cont.classList.remove("oculto");
+
+  const titulo = document.createElement("h2");
+  titulo.textContent = `Resultado para "${resultado.diseno}"`;
+  cont.appendChild(titulo);
+
+  for (const [nombreRuta, datos] of Object.entries(resultado.rutas)) {
+    const seccion = document.createElement("div");
+    seccion.className = "tarjeta ruta";
+
+    const cabeza = document.createElement("div");
+    cabeza.className = "cabeza";
+    cabeza.innerHTML = `
+      <h3>${NOMBRES_RUTA_CORTOS[nombreRuta] || nombreRuta}</h3>
+      <span class="badge ${claseVeredicto(datos.veredicto)}">${datos.veredicto}</span>
+    `;
+    seccion.appendChild(cabeza);
+
+    for (const c of datos.compuertas) {
+      const conf = claseConfianza(c.confianza);
+      const fila = document.createElement("div");
+      fila.className = "compuerta";
+
+      let datosLinea = "";
+      if (c.valor !== null && c.umbral !== null) {
+        datosLinea = `<div class="datos">valor ${c.valor.toFixed(2)} / umbral ${c.umbral.toFixed(2)} ${c.unidad || ""}</div>`;
+      } else if (c.valor !== null) {
+        datosLinea = `<div class="datos">valor ${c.valor.toFixed(2)} ${c.unidad || ""}</div>`;
+      }
+
+      fila.innerHTML = `
+        <div class="fila-1">
+          <span class="nombre">${c.compuerta}</span>
+          <span class="badges">
+            <span class="confianza ${conf.clase}">${conf.icono} ${c.confianza}</span>
+            <span class="badge ${c.estado}">${c.estado}</span>
+          </span>
+        </div>
+        ${datosLinea}
+        ${c.motivo ? `<div class="motivo">${c.motivo}</div>` : ""}
+        ${c.advertencia ? `<div class="advertencia">⚠ ${c.advertencia}</div>` : ""}
+        ${c.fuente ? `<div class="fuente">${c.fuente}</div>` : ""}
+      `;
+      seccion.appendChild(fila);
+    }
+
+    cont.appendChild(seccion);
+  }
+
+  cont.scrollIntoView({behavior: "smooth", block: "start"});
+}
+
+$("boton-evaluar").addEventListener("click", evaluar);
+iniciar();
+</script>
+</body>
+</html>
