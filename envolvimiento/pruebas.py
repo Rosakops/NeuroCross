@@ -51,6 +51,7 @@ def correr(detalle=False):
     import rutas
     import glicocalix
     import envolvimiento_core as E
+    import nanotransportador as N
 
     def equivalencia():
         m = _cargar("_ve", AQUI / "verifica_equivalencia.py")
@@ -58,6 +59,8 @@ def correr(detalle=False):
 
     suites = [
         ("rutas.py",            lambda: rutas.validar_contra_experimentos()),
+        ("rutas.py (subtipos)", lambda: rutas.test_metadatos_subtipo()),
+        ("nanotransportador.py", lambda: N.test_nanotransportador()),
         ("glicocalix.py",       lambda: glicocalix.test_glicocalix()),
         ("envolvimiento_core",  lambda: E.test_limites()),
         ("equivalencia colab",  equivalencia),

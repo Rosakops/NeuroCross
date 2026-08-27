@@ -32,6 +32,7 @@
 #  validar_contra_experimentos().
 # =============================================================================
 
+import functools
 from dataclasses import dataclass
 from typing import Optional
 
@@ -39,6 +40,7 @@ import numpy as np
 
 import envolvimiento_core as E
 import glicocalix as G
+import nanotransportador as N
 
 PASA, FALLA, DESCONOCIDA = "PASA", "FALLA", "DESCONOCIDA"
 
@@ -89,6 +91,88 @@ class Diseno:
     def radio_nm(self):
         return self.diametro_nm / 2.0
 
+    @property
+    def categoria(self):
+        """Categoría (nivel 1) del subtipo (`clase`, nivel 2), vía el
+        catálogo de nanotransportador.py. None si `clase` no es un subtipo
+        soportado todavía: eso NO es un error de construcción (Diseno se usa
+        también en pruebas de falsabilidad con clases inventadas a propósito,
+        ver F18), solo significa que no tiene categoría asignada.
+        """
+        try:
+            return N.categoria_de(self.clase)
+        except N.SubtipoNoSoportado:
+            return None
+
+
+def construir_diseno(categoria: str, subtipo: str, **kwargs) -> "Diseno":
+    """Punto de entrada VALIDADO para construir un Diseno a partir del flujo
+    de usuario: categoría primero, subtipo YA SOPORTADO dentro de ella
+    después. A diferencia de instanciar `Diseno(...)` directamente (que
+    sigue permisivo, lo usan las pruebas de falsabilidad), esta función
+    RECHAZA explícitamente cualquier subtipo que no esté en
+    nanotransportador.SUBTIPOS_SOPORTADOS, con `nanotransportador.SubtipoNoSoportado`
+    y su mensaje explícito. Así ningún parámetro libre de un subtipo sin
+    catalogar llega nunca a evaluarse con las compuertas de otro subtipo.
+    """
+    N.validar_subtipo(categoria, subtipo)
+    return Diseno(clase=subtipo, **kwargs)
+
+
+def compuerta_valida_para(*subtipos_validados, nombre=None, confianza=None):
+    """Decorador: metadato EXPLÍCITO de para qué subtipo(s) está
+    calibrada/validada una compuerta física, y con qué nivel de CONFIANZA.
+
+    Regla dura del proyecto (arquitectura, 2026-08-27): si el candidato es de
+    un subtipo para el que la compuerta NO está validada, la compuerta debe
+    devolver DESCONOCIDA automáticamente, nunca PASA ni FALLA, sin excepción.
+    Este decorador hace la regla ESTRUCTURAL (se aplica antes de que el
+    cuerpo de la compuerta se ejecute) en vez de depender de que cada
+    compuerta se acuerde de comprobarlo por su cuenta.
+
+    `nombre` es la etiqueta de compuerta a usar en el Resultado DESCONOCIDA
+    (para que la tabla de salida sea legible); puede ser un string fijo o un
+    callable(d, *args, **kwargs) -> str para compuertas cuyo nombre depende
+    de sus argumentos (p.ej. g_difusion_ecs).
+
+    `confianza` es uno de CONFIANZA_VALIDADA / CONFIANZA_ANALOGIA /
+    CONFIANZA_SIN_FISICA (ver arriba). Se estampa en TODO Resultado que
+    produzca la compuerta, gane o pierda, para que la interfaz lo muestre sin
+    tener que leer el código. Si no se pasa, se asume CONFIANZA_SIN_FISICA
+    (lo más conservador: sin metadato explícito, no se presume validación).
+    """
+    subtipos_validados = frozenset(subtipos_validados)
+    confianza = confianza or CONFIANZA_SIN_FISICA
+
+    def decorador(fn):
+        def _etiqueta(d, *args, **kwargs):
+            if callable(nombre):
+                return nombre(d, *args, **kwargs)
+            return nombre or fn.__name__
+
+        @functools.wraps(fn)
+        def envoltura(d: "Diseno", *args, **kwargs):
+            if d.clase not in subtipos_validados:
+                r = Resultado(
+                    _etiqueta(d, *args, **kwargs), DESCONOCIDA,
+                    motivo=(f"compuerta no calibrada/validada para el "
+                            f"subtipo {d.clase!r}; validada solo para: "
+                            f"{', '.join(sorted(subtipos_validados))}. "
+                            "Regla dura del proyecto: nunca PASA ni FALLA "
+                            "para un subtipo sin calibrar (arquitectura, "
+                            "2026-08-27)"))
+            else:
+                r = fn(d, *args, **kwargs)
+            if not r.confianza:
+                r.confianza = confianza
+            return r
+
+        envoltura.subtipos_validados = subtipos_validados
+        envoltura.confianza = confianza
+        return envoltura
+
+    return decorador
+
 
 @dataclass
 class Resultado:
@@ -111,6 +195,31 @@ class Resultado:
     fuente: str = ""
     motivo: str = ""
     advertencia: str = ""
+    # Nivel de CONFIANZA de la compuerta (no del veredicto de este caso
+    # concreto): qué tan sólido es el anclaje de la compuerta en sí. Lo
+    # asigna compuerta_valida_para() automáticamente, ver CONFIANZA_* más
+    # abajo. Tarea de arquitectura, 2026-08-27 (interfaz web).
+    confianza: str = ""
+
+
+# =============================================================================
+#  NIVELES DE CONFIANZA DE UNA COMPUERTA
+#  Tarea de arquitectura (interfaz web), 2026-08-27. NO es un dato nuevo: es
+#  una CLASIFICACIÓN de lo que cada compuerta ya declaraba en su propio
+#  docstring/comentarios (fuente primaria vs. convención prestada por
+#  analogía vs. compuerta sin física, solo declarando el hueco). Se hace
+#  visible en la UI para que el usuario no tenga que leer el código para
+#  saber cuánto pesa cada compuerta.
+#
+#  Es una clasificación editorial, no un cálculo: la asignación por compuerta,
+#  más abajo en cada `@compuerta_valida_para(...)`, la confirmó Jhovan el
+#  2026-08-27. Ninguna de las tres etiquetas cambia el veredicto
+#  PASA/FALLA/DESCONOCIDA de ninguna compuerta.
+# =============================================================================
+CONFIANZA_VALIDADA = "validada con contraste real"
+CONFIANZA_ANALOGIA = "prestada por analogía (sin contraste propio)"
+CONFIANZA_SIN_FISICA = "sin física implementada"
+NIVELES_CONFIANZA = (CONFIANZA_VALIDADA, CONFIANZA_ANALOGIA, CONFIANZA_SIN_FISICA)
 
 
 def _cmp(nombre, valor, umbral, unidad, fuente, mayor_es_mejor):
@@ -124,6 +233,8 @@ def _cmp(nombre, valor, umbral, unidad, fuente, mayor_es_mejor):
 #  COMPUERTAS IMPLEMENTADAS  (cada una con su anclaje)
 # =============================================================================
 
+@compuerta_valida_para("liposoma", nombre="Transportador fabricable",
+                       confianza=CONFIANZA_VALIDADA)
 def g_transportador_fabricable(d: Diseno):
     """¿Es geométricamente posible un liposoma de ese tamaño?
 
@@ -133,17 +244,16 @@ def g_transportador_fabricable(d: Diseno):
 
     El simulador es exclusivo para liposomas (decisión de Jhovan,
     2026-08-24): cualquier otra clase devuelve DESCONOCIDA en vez de
-    aplicarle el límite del liposoma.
+    aplicarle el límite del liposoma. Desde la tarea de arquitectura del
+    2026-08-27 ese comportamiento lo impone el decorador
+    `compuerta_valida_para`, ya no un `if` a mano dentro de la función.
     """
-    if d.clase == "liposoma":
-        minimo = G.diametro_liposoma_minimo_nm(4.0, 4.0)
-        return _cmp("Transportador fabricable", d.diametro_nm, minimo, "nm",
-                    "Pan et al. 2008, PRL 100:198103, Fig. 3c", True)
+    minimo = G.diametro_liposoma_minimo_nm(4.0, 4.0)
+    return _cmp("Transportador fabricable", d.diametro_nm, minimo, "nm",
+                "Pan et al. 2008, PRL 100:198103, Fig. 3c", True)
 
-    return Resultado("Transportador fabricable", DESCONOCIDA,
-                     d.diametro_nm, None, "nm", None, "",
-                     f"clase '{d.clase}' desconocida para esta compuerta")
-
+@compuerta_valida_para("liposoma", nombre="Tamiz del glicocálix",
+                       confianza=CONFIANZA_VALIDADA)
 def g_glicocalix_tamiz(d: Diseno):
     """¿Atraviesa el tamiz de la matriz de fibras del glicocálix?
 
@@ -212,6 +322,8 @@ _F_DLVO_UMBRAL = ("Tadros 2007, cap.1 de Colloid Stability: Role of Surface "
                    "NO es un umbral publicado para este sistema")
 
 
+@compuerta_valida_para("liposoma", nombre="Barrera del glicocálix (kT)",
+                       confianza=CONFIANZA_ANALOGIA)
 def g_glicocalix_pmf(d: Diseno):
     """Barrera de energía (kT) del glicocálix en la meseta/hombro, vía el
     ajuste kT_hombro() (Kabedev & Lobaskin 2022). Complementa (NO sustituye)
@@ -269,6 +381,8 @@ def g_glicocalix_pmf(d: Diseno):
                             "aplica con confianza aquí.")
 
 
+@compuerta_valida_para("liposoma", nombre="Envolvimiento de membrana",
+                       confianza=CONFIANZA_ANALOGIA)
 def g_envolvimiento(d: Diseno, kappa_kT=25.0, sigma_mNm=0.03, hamaker_J=4.5e-21):
     """¿Es lo bastante grande para que la membrana lo envuelva?"""
     w = E.w_adhesion(d.radio_nm, d.zeta_mV, d.peg_nm, hamaker_J)
@@ -277,6 +391,8 @@ def g_envolvimiento(d: Diseno, kappa_kT=25.0, sigma_mNm=0.03, hamaker_J=4.5e-21)
                 "Deserno 2004, PRE 69:031903, Sec. III C", True)
 
 
+@compuerta_valida_para("liposoma", nombre="Compuerta de caveola",
+                       confianza=CONFIANZA_VALIDADA)
 def g_caveola(d: Diseno):
     """¿Cabe en una caveola?
 
@@ -369,6 +485,11 @@ _F_ZETA_POS = ("Berry et al. 2016, RSC Adv 6:41665, Tabla 1 y Fig. 3; "
                "Mastorakos et al. 2016, Small 12:678, Tabla 1 y Fig. 2")
 
 
+@compuerta_valida_para(
+    "liposoma",
+    nombre=lambda d, que="transportador", escenario="nance":
+        f"Difusión en espacio extracelular ({que})",
+    confianza=CONFIANZA_VALIDADA)
 def g_difusion_ecs(d: Diseno, que="transportador", escenario="nance"):
     """¿Puede difundir por el espacio extracelular del cerebro hasta la mielina?
 
@@ -545,6 +666,10 @@ T_LIBERACION_COTA_INFERIOR_h = 24.0    # Mao 2014: a las 24 h retiene >50 %
 T_MEDIO_MONOCITO_h = 20.0   # Yona 2013: vida media EN CIRCULACIÓN del Ly6C+
 
 
+@compuerta_valida_para(
+    "liposoma",
+    nombre="Tránsito del monocito frente a cinética de liberación",
+    confianza=CONFIANZA_ANALOGIA)
 def g_transito_vs_liberacion(d: Diseno):
     """¿Llega la célula a la lesión antes de que el fármaco se suelte? (B.3)
 
@@ -584,6 +709,10 @@ def g_transito_vs_liberacion(d: Diseno):
             "y quedan RETIRADOS del veredicto"))
 
 
+@compuerta_valida_para(
+    "liposoma",
+    nombre="Salida del fármaco de la célula transportadora",
+    confianza=CONFIANZA_ANALOGIA)
 def g_salida_farmaco(d: Diseno):
     """¿Puede el fármaco salir de la célula que lo transportó? (tarea B.5)
 
@@ -617,6 +746,8 @@ def g_salida_farmaco(d: Diseno):
                          "espacio extracelular de una lesión no es ese medio"))
 
 
+@compuerta_valida_para("liposoma", nombre="Captación fagocítica",
+                       confianza=CONFIANZA_VALIDADA)
 def g_captacion_fagocitica(d: Diseno):
     """¿Lo capta un macrófago con eficacia suficiente?
 
@@ -656,7 +787,18 @@ def g_captacion_fagocitica(d: Diseno):
 #  Cada una corresponde a una tarea abierta del cronograma v4.
 # =============================================================================
 
-def _sin_dato(nombre, motivo, tarea):
+def _sin_dato(nombre, motivo, tarea, subtipos_validados=("liposoma",),
+              confianza=CONFIANZA_SIN_FISICA):
+    """Fábrica de compuertas que devuelven DESCONOCIDA por falta de dato.
+
+    `subtipos_validados` lleva el mismo metadato explícito que las demás
+    compuertas (por defecto liposoma, único subtipo del catálogo hoy): no
+    cambia el resultado (ya era DESCONOCIDA para todo) pero lo hace
+    consistente y verificable por la misma regla dura, en vez de ser una
+    excepción tácita. `confianza` por defecto es CONFIANZA_SIN_FISICA: estas
+    compuertas no calculan nada, solo declaran un hueco de dato.
+    """
+    @compuerta_valida_para(*subtipos_validados, nombre=nombre, confianza=confianza)
     def f(d: Diseno):
         return Resultado(nombre, DESCONOCIDA, motivo=f"{motivo}  [tarea {tarea}]")
     return f
@@ -730,6 +872,123 @@ g_carga_util = _sin_dato(
     "transcitosis, no uno independiente. Para el dendrímero falta además la "
     "carga con fingolimod (el 1:1 de Devarakonda es con nifedipino)",
     "G.2")
+
+
+# =============================================================================
+#  METADATOS DE SUBTIPO POR COMPUERTA: regla dura y su prueba
+#  Tarea de arquitectura, 2026-08-27. Ver compuerta_valida_para() más arriba.
+# =============================================================================
+
+# Todas las compuertas físicas que existen hoy, con su metadato de subtipo ya
+# aplicado por el decorador. Se listan aquí, en un solo sitio, para poder
+# recorrerlas en la prueba de abajo sin tener que acordarse de actualizar dos
+# listas cuando se añada una compuerta nueva.
+_TODAS_LAS_COMPUERTAS = [
+    g_transportador_fabricable,
+    g_glicocalix_tamiz,
+    g_glicocalix_pmf,
+    g_envolvimiento,
+    g_caveola,
+    g_difusion_ecs,
+    g_transito_vs_liberacion,
+    g_salida_farmaco,
+    g_captacion_fagocitica,
+    g_union_glicocalix,
+    g_acceso_receptor,
+    g_transcitosis,
+    g_carga_util,
+]
+
+
+def test_metadatos_subtipo(verbose=True):
+    """Verifica la regla dura de la tarea de arquitectura del 2026-08-27:
+
+    (1) toda compuerta física declara, como metadato explícito en el código
+        (el decorador `compuerta_valida_para`), para qué subtipo(s) fue
+        calibrada/validada;
+    (2) si se evalúa un candidato de un subtipo para el que una compuerta NO
+        está validada, esa compuerta devuelve DESCONOCIDA automáticamente,
+        NUNCA PASA ni FALLA, sin excepción — incluso con parámetros extremos
+        que SÍ darían PASA o FALLA si el subtipo estuviera validado.
+    """
+    ok = []
+
+    def chequeo(nombre, cond, detalle=""):
+        ok.append(bool(cond))
+        if verbose:
+            print(f"  [{'OK ' if cond else 'FALLA'}] {nombre}{'  ' + detalle if detalle else ''}")
+
+    if verbose:
+        print("=" * 78)
+        print(" METADATOS DE SUBTIPO POR COMPUERTA (arquitectura, 2026-08-27)")
+        print("=" * 78)
+
+    for c in _TODAS_LAS_COMPUERTAS:
+        chequeo(f"{c.__name__}: declara subtipos_validados no vacío",
+                bool(getattr(c, "subtipos_validados", None)))
+
+    # Nivel de confianza: cada compuerta debe declarar uno de los tres
+    # niveles reconocidos, y todo Resultado que produzca (gane, pierda o
+    # DESCONOCIDA) tiene que llevarlo puesto — es lo que la interfaz web
+    # muestra junto al veredicto.
+    liposoma_ok = Diseno("candidato liposoma válido", 100.0, -5.0, peg_nm=5.0)
+    for c in _TODAS_LAS_COMPUERTAS:
+        chequeo(f"{c.__name__}: declara un nivel de confianza reconocido",
+                getattr(c, "confianza", None) in NIVELES_CONFIANZA,
+                f"da {getattr(c, 'confianza', None)!r}")
+        r = c(liposoma_ok)
+        chequeo(f"{c.__name__}: el Resultado lleva el mismo nivel de confianza",
+                r.confianza == c.confianza, f"da {r.confianza!r}")
+
+    # La regla dura en sí: un candidato de un subtipo NO REGISTRADO, con
+    # parámetros extremos que para "liposoma" darían FALLA en varias
+    # compuertas (zeta muy negativo, tamaño grande) o PASA en otras, debe
+    # salir SIEMPRE DESCONOCIDA de TODAS las compuertas con metadato: la
+    # regla se impone antes de que el valor numérico importe.
+    candidato_no_soportado = Diseno(
+        "candidato de subtipo no registrado", 700.0, -50.0, peg_nm=5.0,
+        clase="dendrimero")
+    for c in _TODAS_LAS_COMPUERTAS:
+        r = c(candidato_no_soportado)
+        chequeo(f"{c.__name__}: subtipo no validado -> DESCONOCIDA (nunca PASA/FALLA)",
+                r.estado == DESCONOCIDA, f"da {r.estado}")
+        chequeo(f"{c.__name__}: sigue llevando su nivel de confianza aun "
+                "DESCONOCIDA por subtipo no validado",
+                r.confianza == c.confianza, f"da {r.confianza!r}")
+
+    # Mismo candidato, pero de un subtipo que ni siquiera existe en el
+    # catálogo (ni con ese nombre inventado). Debe fallar exactamente igual:
+    # "no registrado" y "no existe en absoluto" tienen que dar el mismo
+    # veredicto (DESCONOCIDA), no un comportamiento distinto.
+    candidato_inventado = Diseno("x", 700.0, -50.0, clase="inventada_xyz")
+    chequeo("g_transportador_fabricable: clase inventada -> DESCONOCIDA también",
+            g_transportador_fabricable(candidato_inventado).estado == DESCONOCIDA)
+
+    # El flujo de entrada de usuario (nanotransportador.construir_diseno)
+    # rechaza explícitamente un subtipo no soportado ANTES de construir el
+    # diseño: nunca deja que sus parámetros lleguen a evaluarse.
+    rechazado = False
+    try:
+        construir_diseno("organico", "dendrimero", nombre="x",
+                         diametro_nm=100.0, zeta_mV=0.0)
+    except N.SubtipoNoSoportado:
+        rechazado = True
+    chequeo("construir_diseno rechaza un subtipo no soportado antes de "
+            "construir el diseño",
+            rechazado)
+
+    ok_construido = construir_diseno("organico", "liposoma", nombre="x",
+                                     diametro_nm=100.0, zeta_mV=0.0)
+    chequeo("construir_diseno acepta organico/liposoma y evalúa con sus "
+            "propias compuertas",
+            ok_construido.clase == "liposoma"
+            and ok_construido.categoria == "organico")
+
+    if verbose:
+        print("-" * 78)
+        print(f" RESULTADO: {sum(ok)}/{len(ok)} pruebas superadas")
+        print("=" * 78)
+    return all(ok)
 
 
 # =============================================================================
@@ -1655,6 +1914,73 @@ def figuras_liposoma_separadas():
     for f in hechas:
         print(f"    {f}")
     return hechas
+
+
+# =============================================================================
+#  PUENTE WEB (Pyodide)
+#  Tarea de arquitectura, 2026-08-27. La interfaz interactiva en triage/
+#  corre este mismo rutas.py dentro del navegador vía Pyodide y llama a estas
+#  dos funciones. NO tienen física propia: solo empaquetan lo que evaluar()
+#  y el catálogo de nanotransportador.py ya devuelven, en JSON, porque
+#  Resultado/Diseno no son directamente serializables desde JS.
+# =============================================================================
+
+def catalogo_json():
+    """Categorías, subtipos soportados por categoría y sus parámetros. Sirve
+    para construir el flujo de entrada en cascada de la web SIN hardcodear
+    en JS ninguna lista de subtipos: la única fuente de verdad sigue siendo
+    nanotransportador.SUBTIPOS_SOPORTADOS.
+    """
+    import json
+    return json.dumps({
+        "categorias": list(N.CATEGORIAS),
+        "subtipos_por_categoria": {
+            cat: [
+                {"subtipo": s, "parametros": list(N.SUBTIPOS_SOPORTADOS[s].parametros)}
+                for s in N.subtipos_de_categoria(cat)
+            ]
+            for cat in N.CATEGORIAS
+        },
+    })
+
+
+def evaluar_json(categoria, subtipo, params_json):
+    """Valida categoría+subtipo, construye el Diseno y evalúa las cuatro
+    rutas, todo en JSON. `params_json` es un objeto JSON con los parámetros
+    del subtipo (p.ej. {"nombre": "...", "diametro_nm": 40.0, "zeta_mV": -5.0,
+    "peg_nm": 0.0, "farmaco_diametro_nm": 1.683} para liposoma).
+
+    Si el subtipo no está soportado, o algún parámetro no es válido para el
+    constructor de Diseno, devuelve {"error": "..."} en vez de lanzar: esta
+    función la llama JS, que no puede capturar una excepción de Python.
+    """
+    import json
+    try:
+        params = json.loads(params_json)
+    except json.JSONDecodeError as e:
+        return json.dumps({"error": f"parámetros mal formados: {e}"})
+
+    try:
+        d = construir_diseno(categoria, subtipo, **params)
+    except N.SubtipoNoSoportado as e:
+        return json.dumps({"error": str(e)})
+    except (TypeError, ValueError) as e:
+        return json.dumps({"error": f"parámetro inválido: {e}"})
+
+    rutas_out = {}
+    for nombre_ruta, (veredicto, resultados) in evaluar(d).items():
+        rutas_out[nombre_ruta] = {
+            "veredicto": veredicto,
+            "compuertas": [
+                dict(compuerta=r.compuerta, estado=r.estado,
+                     confianza=r.confianza, valor=r.valor, umbral=r.umbral,
+                     unidad=r.unidad, margen=r.margen, fuente=r.fuente,
+                     motivo=r.motivo, advertencia=r.advertencia)
+                for r in resultados
+            ],
+        }
+    return json.dumps({"diseno": d.nombre, "categoria": categoria,
+                       "subtipo": subtipo, "rutas": rutas_out})
 
 
 if __name__ == "__main__":
