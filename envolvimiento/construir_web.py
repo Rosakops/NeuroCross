@@ -127,6 +127,10 @@ FUENTES = [
      "Intracerebral Nanoparticle Transport Facilitated by Alzheimer Pathology "
      "and Age", "Nano Lett 23(23):10971-10982",
      "https://doi.org/10.1021/acs.nanolett.3c03222", "Validación, caso C1"),
+    ("Hervé F, Ghinea N, Scherrmann JM (2008)",
+     "CNS Delivery Via Adsorptive Transcytosis",
+     "AAPS J 10(3):455-472", "https://doi.org/10.1208/s12248-008-9055-2",
+     "Definición de ruta C · adsortiva (AMT)"),
     ("Cheng MJ, Kumar R, Sridhar S, Webster TJ, Ebong EE (2016)",
      "Endothelial glycocalyx conditions influence nanoparticle uptake for "
      "passive targeting", "Int J Nanomedicine 11:3305-3315",
@@ -770,6 +774,7 @@ VANCOUVER = {
     "Cheng 2016": 20,
     "Shi 2025": 21,
     "Larsen 2025": 22,
+    "Herve 2008": 23,
 }
 
 #  «Apellido [y/& Otro] [et al.] AÑO[, Revista vol:pág]». El fragmento de
@@ -1321,6 +1326,7 @@ o [13-15].</p>
 <li id="ref20" value="20">Cheng MJ, Kumar R, Sridhar S, Webster TJ, Ebong EE. Endothelial glycocalyx conditions influence nanoparticle uptake for passive targeting. Int J Nanomedicine. 2016;11:3305-15. <a href="https://doi.org/10.2147/IJN.S106299" target="_blank" rel="noopener">doi:10.2147/IJN.S106299</a></li>
 <li id="ref21" value="21">Shi SM, Suh RJ, Shon DJ, Garcia FJ, Buff JK, Atkins M, et al. Glycocalyx dysregulation impairs blood-brain barrier in ageing and disease. Nature. 2025;639:985-94. <a href="https://doi.org/10.1038/s41586-025-08589-9" target="_blank" rel="noopener">doi:10.1038/s41586-025-08589-9</a></li>
 <li id="ref22" value="22">Larsen R, Kucharz K, Aydin S, Micael MKB, Choudhury B, Paulchakrabarti M, et al. Multi-omic analysis reveals the unique glycan landscape of the blood-brain barrier glycocalyx [preprint]. bioRxiv. 2025:2025.04.07.645297. <a href="https://doi.org/10.1101/2025.04.07.645297" target="_blank" rel="noopener">doi:10.1101/2025.04.07.645297</a></li>
+<li id="ref23" value="23">Hervé F, Ghinea N, Scherrmann JM. CNS delivery via adsorptive transcytosis. AAPS J. 2008;10(3):455-72. <a href="https://doi.org/10.1208/s12248-008-9055-2" target="_blank" rel="noopener">doi:10.1208/s12248-008-9055-2</a></li>
 </ol>
 """
 

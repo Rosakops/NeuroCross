@@ -756,6 +756,10 @@ RUTAS = {
         lambda d: g_difusion_ecs(d, "fármaco liberado"),
         g_carga_util,
     ],
+    # Transcitosis mediada por adsorción (AMT): moléculas/nanotransportadores
+    # con carga neta positiva se unen electrostáticamente a la superficie
+    # luminal aniónica del endotelio y se internalizan por transcitosis.
+    # Definición y mecanismo: Hervé et al. 2008.
     "C · adsortiva (carga positiva)": [
         g_transportador_fabricable,
         g_union_glicocalix,
