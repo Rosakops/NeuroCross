@@ -280,3 +280,31 @@ function renderizarResultados(resultado) {
 
 $("boton-evaluar").addEventListener("click", evaluar);
 iniciar();
+
+const botonMenu = document.getElementById('boton-menu');
+const barraLateral = document.getElementById('barra-lateral');
+const fondoBarra = document.getElementById('fondo-barra');
+
+function alternarBarra(){
+  barraLateral.classList.toggle('abierta');
+  fondoBarra.classList.toggle('visible');
+}
+botonMenu.addEventListener('click', alternarBarra);
+fondoBarra.addEventListener('click', alternarBarra);
+
+const enlaces = document.querySelectorAll('.enlace-barra');
+
+enlaces.forEach(enlace => {
+  enlace.addEventListener('click', (e) => {
+    e.preventDefault();
+    const idVista = enlace.dataset.vista;
+
+    document.querySelectorAll('.vista').forEach(v => v.classList.add('oculto'));
+    document.getElementById(idVista).classList.remove('oculto');
+
+    enlaces.forEach(el => el.classList.remove('activo'));
+    enlace.classList.add('activo');
+
+    alternarBarra(); // cierra la barra al elegir una opción
+  });
+});

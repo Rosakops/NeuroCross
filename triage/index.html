@@ -36,6 +36,19 @@
 </head>
 <body>
 
+<button id="boton-menu" class="boton-menu" aria-label="Abrir menú">
+  <span></span><span></span><span></span>
+</button>
+
+<aside id="barra-lateral" class="barra-lateral">
+  <nav>
+    <a href="#" class="enlace-barra activo" data-vista="vista-triage">Triage</a>
+    <a href="#" class="enlace-barra" data-vista="vista-ayuda">Ayuda</a>
+  </nav>
+</aside>
+
+<div id="fondo-barra" class="fondo-barra"></div>
+
 <header class="principal">
   <div class="envoltorio">
     <p class="expediente">NeuroCross</p>
@@ -45,6 +58,8 @@
 </header>
 
 <main class="envoltorio">
+
+<div id="vista-triage" class="vista">
 
   <section class="tarjeta" id="seccion-carga">
     <div id="estado" class="cargando"><span class="punto"></span> <span id="estado-texto">Cargando Pyodide…</span></div>
@@ -117,6 +132,12 @@
   </section>
 
   <section id="resultados" class="oculto"></section>
+
+</div>
+
+<div id="vista-ayuda" class="vista oculto">
+  <p>Aquí va el contenido de esta otra opción.</p>
+</div>
 
 </main>
 
