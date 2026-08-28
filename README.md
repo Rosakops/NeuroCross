@@ -13,8 +13,10 @@ NeuroCross is not a validated quantitative predictor of drug delivery or therape
  
 ## 🚀 How to Run
  
-The route to access the simulator is `/triage/index.html`. Then open the file in your browser.
- 
+Try it live: https://rosakops.github.io/NeuroCross/triage/
+
+Or run it locally: the route to access the simulator is `/triage/index.html`, served over HTTP (not opened directly as a file — the engine's Python files are blocked by CORS otherwise). From the repo root: `python3 -m http.server 8000` and open `http://localhost:8000/triage/`.
+
 > ⚠️ **Disclaimer**  
 > This project is a work in progress. It does not predict therapeutic efficacy or final parenchymal delivery — that is explicitly out of scope. The underlying models, simulations, and parameters have not been fully validated or benchmarked against experimental data. As such, this software **should not be cited or relied upon as a definitive scientific reference** for clinical or academic publications at this stage.  
 >  
