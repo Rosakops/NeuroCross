@@ -7,7 +7,7 @@
 
 ## 📌 Description
  
-NeuroCross is a personal research project by Jhovan Watson, forked from the SENACYT blood-brain barrier (BBB) simulator and now developed independently. It models the adhesion of **functionalized nanocarriers** (currently liposomes only) to the luminal surface of the BBB, using DLVO/PMF physics and Boltzmann statistics, in the context of therapies for **Multiple Sclerosis**.
+NeuroCross is a personal research project, forked from the SENACYT blood-brain barrier (BBB) simulator and now developed independently. It models the adhesion of **functionalized nanocarriers** (currently liposomes only) to the luminal surface of the BBB, using DLVO/PMF physics and Boltzmann statistics, in the context of therapies for **Multiple Sclerosis**.
  
 NeuroCross is not a validated quantitative predictor of drug delivery or therapeutic efficacy — no published literature currently anchors adhesion or permeation outputs end-to-end against real measurements, and no confirmed passive transcytosis mechanism exists for unligated liposomes. Given this, the project's goal is deliberately scoped as a **physical triage tool and literature gap map**: it screens out candidates that are physically unviable in adhesion or circulation survival, and documents — gate by gate — what is backed by real experimental contrast, what is borrowed by analogy, and what has no physics implemented at all. A gate without real contrast never returns FAIL, only UNKNOWN.
  
