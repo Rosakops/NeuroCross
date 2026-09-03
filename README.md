@@ -1,6 +1,6 @@
 # 🧬 NeuroCross — BBB Nanocarrier Triage & Literature Gap Map
 
-![Version](https://img.shields.io/badge/Version-2.0_Binary-blueviolet?style=flat-square)
+![Version](https://img.shields.io/badge/Version-2.1_Binary-blueviolet?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python)
 ![Status](https://img.shields.io/badge/Status-In_Development-orange?style=flat-square)
 [![License](https://img.shields.io/badge/License-View--Only-red?style=flat-square)](./LICENSE)
