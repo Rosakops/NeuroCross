@@ -120,6 +120,17 @@ button.evaluar:not(:disabled):hover{background:#0e4a94}
 
 #resultados{scroll-margin-top:1rem}
 
+/* ---- qué investigar ---- */
+.grupo-que-investigar{margin-top:1rem}
+.grupo-que-investigar h3{font-size:.9rem; margin:0 0 .5rem}
+.grupo-que-investigar.abierto h3{color:var(--azul)}
+.grupo-que-investigar.agotado h3{color:var(--gris)}
+.item-que-investigar{border-top:1px solid var(--linea); padding:.6rem 0}
+.item-que-investigar:first-of-type{border-top:none}
+.item-que-investigar .nombre{font-weight:600; font-size:.88rem}
+.item-que-investigar .texto{font-size:.83rem; color:var(--tinta); margin-top:.3rem; line-height:1.5}
+.grupo-que-investigar.agotado .item-que-investigar .texto{color:var(--suave)}
+
 .oculto{display:none !important}
 
 .boton-menu{position:fixed; top:1rem; left:1rem; z-index:20; display:flex;

@@ -219,6 +219,22 @@ class Resultado:
     # asigna compuerta_valida_para() automáticamente, ver CONFIANZA_* más
     # abajo. Tarea de arquitectura, 2026-08-27 (interfaz web).
     confianza: str = ""
+    # QUÉ EXPERIMENTO haría falta para cerrar un hueco DESCONOCIDA. Separado
+    # de `motivo` a propósito (redefinición de meta, 2026-08): `motivo`
+    # explica POR QUÉ el dato disponible no decide; `que_investigar` dice
+    # QUÉ medir para que sí decida. Vacío por defecto — se rellena SOLO en
+    # las DESCONOCIDA con hueco de dato real. Dos casos NO llevan texto
+    # accionable, cada uno por un motivo distinto:
+    #   · fuera de alcance por diseño (p.ej. g_transcitosis: transporte
+    #     activo dependiente de ATP, fuera del alcance de la termodinámica
+    #     de equilibrio de este simulador) — no es un hueco, es un límite
+    #     del proyecto, así que no se invita a investigarlo;
+    #   · hueco AGOTADO: la pregunta se cerró definitivamente (convención
+    #     metodológica aceptada, o el hueco es literalmente el mismo que
+    #     otro ya declarado fuera de alcance). Ahí el texto empieza con el
+    #     prefijo "AGOTADO" para que la UI lo separe de los huecos abiertos
+    #     y nunca invite a repetir una búsqueda ya cerrada.
+    que_investigar: str = ""
 
 
 # =============================================================================
@@ -305,6 +321,15 @@ def g_glicocalix_tamiz(d: Diseno):
                     "situ, BHE nativa) y Gromnicova 2016 (hCMEC/D3) muestran "
                     "cruce real medible por encima de ese tamaño; el poro "
                     "no es excluyente por sí solo a esta escala")
+        r.que_investigar = (
+            f"este diseño mide {d.diametro_nm:.1f}nm, por encima del poro "
+            f"geométrico de {dmax:.2f}nm (Weinbaum et al. 2003, PNAS "
+            "100:7988) — falta medir en BHE NATIVA in situ (no en cultivo) "
+            f"si nanopartículas de este tamaño específico (~{d.diametro_nm:.1f}nm) "
+            f"y esta ζ ({d.zeta_mV:.1f}mV) cruzan vía vesicular, extendiendo "
+            "el diseño de Lockman et al. 2004 (perfusión cerebral in situ en "
+            "rata, J Drug Target 12(9-10):635-41) a este punto concreto de "
+            "tamaño y carga")
     return r
 
 
@@ -397,7 +422,18 @@ def g_glicocalix_pmf(d: Diseno):
                             f"({UMBRAL_PMF_BAJO_kT:.0f}-{UMBRAL_PMF_ALTO_kT:.0f}"
                             "kT) entre la convención de barrera insignificante "
                             "y la de barrera insuperable; ninguna de las dos "
-                            "aplica con confianza aquí.")
+                            "aplica con confianza aquí.",
+                     que_investigar=(
+                         "AGOTADO — no repetir la búsqueda: el umbral "
+                         "Gmax>25kT es la convención DLVO de ciencia de "
+                         "coloides (Tadros T. 2007, cap.1 de Colloid "
+                         "Stability: The Role of Surface Forces Part I, "
+                         "Wiley-VCH; cita a Verwey EJW & Overbeek JTG 1948, "
+                         "Theory of Stability of Lyophobic Colloids, "
+                         "Elsevier), aplicada por analogía al glicocálix — no "
+                         "es un umbral publicado para este sistema, y no hay "
+                         "más literatura que buscar para cerrarlo: es una "
+                         "elección metodológica, no un hueco de dato"))
 
 
 @compuerta_valida_para("liposoma", nombre="Envolvimiento de membrana",
@@ -436,6 +472,16 @@ def g_caveola(d: Diseno):
                     "muestra cruce real vía clatrina/dinamina a este tamaño; "
                     "el simulador no modela esa vía, no se puede excluir "
                     "por esta compuerta sola")
+        r.que_investigar = (
+            f"este diseño mide {d.diametro_nm:.1f}nm, por encima del "
+            f"diámetro de caveola ({E.DIAM_CAVEOLA_MAX_nm:.1f}nm, Bastiani "
+            "& Parton 2010, J Cell Sci 123:3831) — falta medir si un tamaño "
+            f"cercano a este (~{d.diametro_nm:.1f}nm) sigue cruzando con "
+            "buena eficiencia por la vía de clatrina/dinamina que Wang et "
+            "al. 2026 confirmó farmacológicamente (clorpromazina y dinasor, "
+            "J Nanobiotechnology 24:164) para NP-120 (119.5nm), el único "
+            "punto medido hoy, para poder modelar esa vía como compuerta "
+            "propia en vez de solo la de caveola")
     return r
 
 
@@ -609,7 +655,19 @@ def g_difusion_ecs(d: Diseno, que="transportador", escenario="nance"):
                          "que existen están en +10.0 y +35.3 mV. No se "
                          "extrapola. La física apunta a MÁS adhesión, porque la "
                          "matriz extracelular y las superficies celulares son "
-                         "negativas, pero eso es expectativa, no medida")
+                         "negativas, pero eso es expectativa, no medida",
+                         que_investigar=(
+                             f"este diseño tiene ζ = {z:.1f}mV, dentro del "
+                             "tramo entre 0 y +10 mV donde no hay ni un dato "
+                             "medido — falta medir por MPT (seguimiento de "
+                             "partícula múltiple) en rebanada de cerebro ex "
+                             f"vivo la difusión de liposomas con esta ζ "
+                             f"específica (~{z:.1f}mV), ya que Nance et al. "
+                             "2012 (Sci Transl Med 4:149ra119) solo midió de "
+                             "−2.5 a −52 mV y los dos únicos puntos positivos "
+                             "medidos están muy por encima, en +10.0 mV "
+                             "(Berry et al. 2016, RSC Adv 6:41665) y +35.3 mV "
+                             "(Mastorakos et al. 2016, Small 12:678)"))
 
     if z <= ZETA_NO_DIFUSIVO_mV:
         return Resultado(nombre, FALLA, z, ZETA_NO_DIFUSIVO_mV, "mV",
@@ -725,7 +783,17 @@ def g_transito_vs_liberacion(d: Diseno):
             "descarga de Mao es IN VITRO en PBS y suero, con un liposoma de "
             "157 nm. Los 20 h de Yona 2013 que gobernaban esta compuerta hasta "
             "el 2026-08-12 miden SALIDA DE CIRCULACIÓN, no llegada a la lesión, "
-            "y quedan RETIRADOS del veredicto"))
+            "y quedan RETIRADOS del veredicto"),
+        que_investigar=(
+            f"este candidato es un liposoma de {d.diametro_nm:.1f}nm cargado "
+            "en el monocito transportador — falta medir, en el MISMO modelo "
+            "de EAE (no LPS intracraneal con SPION ni liberación in vitro en "
+            "PBS/suero), el tiempo de llegada a la lesión y el techo de "
+            f"retención de FTY720 para un liposoma de este tamaño "
+            f"(~{d.diametro_nm:.1f}nm), a resolución de horas, para resolver "
+            "el solape entre tránsito 24-48h (Tong et al. 2016, PLoS ONE "
+            "11:e0154022) y descarga >24h sin techo (Mao et al. 2014, "
+            "Nanomedicine 10:393)"))
 
 
 @compuerta_valida_para(
@@ -798,7 +866,17 @@ def g_captacion_fagocitica(d: Diseno):
                          d.diametro_nm - alto, fuente)
     return Resultado("Captación fagocítica", DESCONOCIDA, d.diametro_nm, alto, "nm",
                      None, fuente,
-                     "zona gris entre 150 y 550 nm: no hay dato que la resuelva")
+                     "zona gris entre 150 y 550 nm: no hay dato que la resuelva",
+                     que_investigar=(
+                         f"este diseño mide {d.diametro_nm:.1f}nm, dentro de "
+                         f"la zona gris entre {bajo:.0f} y {alto:.0f} nm — "
+                         "falta medir la captación fagocítica de liposomas "
+                         f"de un tamaño cercano a este (~{d.diametro_nm:.1f}nm) "
+                         "en el mismo modelo de EAE de Muselman et al. 2026 "
+                         "(Front Immunol 16:1657131), para ubicar el umbral "
+                         f"real entre {bajo:.0f} nm (captación pobre) y "
+                         f"{alto:.0f} nm (funciona) en vez de dejar toda la "
+                         "banda como zona gris"))
 
 
 # =============================================================================
@@ -807,7 +885,7 @@ def g_captacion_fagocitica(d: Diseno):
 # =============================================================================
 
 def _sin_dato(nombre, motivo, tarea, subtipos_validados=("liposoma",),
-              confianza=CONFIANZA_SIN_FISICA):
+              confianza=CONFIANZA_SIN_FISICA, que_investigar=""):
     """Fábrica de compuertas que devuelven DESCONOCIDA por falta de dato.
 
     `subtipos_validados` lleva el mismo metadato explícito que las demás
@@ -816,10 +894,17 @@ def _sin_dato(nombre, motivo, tarea, subtipos_validados=("liposoma",),
     consistente y verificable por la misma regla dura, en vez de ser una
     excepción tácita. `confianza` por defecto es CONFIANZA_SIN_FISICA: estas
     compuertas no calculan nada, solo declaran un hueco de dato.
+
+    `que_investigar` queda VACÍO por defecto a propósito: la mayoría de estas
+    compuertas son huecos por ALCANCE de diseño (p.ej. g_transcitosis, fuera
+    de la termodinámica de equilibrio), no huecos de dato que valga la pena
+    investigar, así que no se les inventa un texto accionable. Se pasa
+    explícito solo en la compuerta que sí lo necesita.
     """
     @compuerta_valida_para(*subtipos_validados, nombre=nombre, confianza=confianza)
     def f(d: Diseno):
-        return Resultado(nombre, DESCONOCIDA, motivo=f"{motivo}  [tarea {tarea}]")
+        return Resultado(nombre, DESCONOCIDA, motivo=f"{motivo}  [tarea {tarea}]",
+                         que_investigar=que_investigar)
     return f
 
 
@@ -890,7 +975,14 @@ g_carga_util = _sin_dato(
     "la fracción de dosis que llega al parénquima, que es el MISMO hueco de la "
     "transcitosis, no uno independiente. Para el dendrímero falta además la "
     "carga con fingolimod (el 1:1 de Devarakonda es con nifedipino)",
-    "G.2")
+    "G.2",
+    que_investigar=(
+        "AGOTADO — no repetir la búsqueda: el eslabón que falta (fracción "
+        "de dosis que llega al parénquima) es el MISMO hueco de la "
+        "transcitosis, transporte activo dependiente de ATP y fuera del "
+        "alcance de la termodinámica de equilibrio que modela este "
+        "simulador. No es un hueco independiente que se vaya a cerrar "
+        "buscando más literatura sobre carga o dosis"))
 
 
 # =============================================================================
@@ -1335,6 +1427,22 @@ def validar_contra_experimentos(verbose=True):
     chequeo("F27 la carga útil sale DESCONOCIDA para todo el catálogo",
             all(g_carga_util(d).estado == DESCONOCIDA for d in CATALOGO),
             "(faltan carga con fingolimod, moléculas por liposoma y dosis)")
+
+    # -- "qué investigar" (redefinición de meta, 2026-08). Un hueco AGOTADO
+    #    (la cuestión ya se cerró) nunca debe aparecer como "vale la pena
+    #    investigar", y un hueco ABIERTO sí debe traer texto accionable.
+    r_pmf_agotado = g_glicocalix_pmf(Diseno("x", 30.0, 0.0))  # R=15nm, zona de transición
+    chequeo("F28 un hueco AGOTADO (g_glicocalix_pmf, 25kT) nunca se marca "
+            "como 'vale la pena investigar'",
+            r_pmf_agotado.estado == DESCONOCIDA
+            and r_pmf_agotado.que_investigar.startswith("AGOTADO"))
+
+    r_caveola_abierto = g_caveola(Diseno("x", 100.0, -5.0))  # >80nm, caveola
+    chequeo("F29 un hueco ABIERTO (g_caveola, >80nm) sale DESCONOCIDA con "
+            "texto accionable de qué investigar",
+            r_caveola_abierto.estado == DESCONOCIDA
+            and bool(r_caveola_abierto.que_investigar)
+            and not r_caveola_abierto.que_investigar.startswith("AGOTADO"))
 
     # -- las advertencias no se pueden perder por el camino.
     chequeo("F4 un PASA con salvedad conserva su advertencia",
@@ -2025,7 +2133,8 @@ def evaluar_json(categoria, subtipo, params_json):
                 dict(compuerta=r.compuerta, estado=r.estado,
                      confianza=r.confianza, valor=r.valor, umbral=r.umbral,
                      unidad=r.unidad, margen=r.margen, fuente=r.fuente,
-                     motivo=r.motivo, advertencia=r.advertencia)
+                     motivo=r.motivo, advertencia=r.advertencia,
+                     que_investigar=r.que_investigar)
                 for r in resultados
             ],
         }

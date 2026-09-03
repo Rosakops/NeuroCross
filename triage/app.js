@@ -325,7 +325,74 @@ function renderizarResultados(resultado) {
     cont.appendChild(seccion);
   }
 
+  renderizarQueInvestigar(resultado);
   cont.scrollIntoView({behavior: "smooth", block: "start"});
+}
+
+// Prefijo que rutas.py estampa en `que_investigar` para un hueco AGOTADO
+// (la pregunta ya se cerró: no repetir la búsqueda). Ver Resultado en
+// rutas.py y su comentario junto al campo `que_investigar`.
+const PREFIJO_AGOTADO = "AGOTADO";
+
+function renderizarQueInvestigar(resultado) {
+  const cont = $("seccion-que-investigar");
+  cont.innerHTML = "";
+  cont.classList.remove("oculto");
+
+  // Junta las DESCONOCIDA con que_investigar no vacío de las CUATRO rutas,
+  // deduplicando por nombre de compuerta (la misma compuerta aparece en más
+  // de una ruta con el mismo texto). Fuera de alcance por diseño
+  // (que_investigar vacío, p.ej. transcitosis) no entra aquí a propósito.
+  const vistos = new Map();
+  for (const datos of Object.values(resultado.rutas)) {
+    for (const c of datos.compuertas) {
+      if (c.estado !== "DESCONOCIDA" || !c.que_investigar) continue;
+      if (!vistos.has(c.compuerta)) vistos.set(c.compuerta, c.que_investigar);
+    }
+  }
+
+  const titulo = document.createElement("h2");
+  titulo.textContent = "Qué investigar para este diseño";
+  cont.appendChild(titulo);
+
+  if (vistos.size === 0) {
+    const p = document.createElement("p");
+    p.textContent = "Ninguna compuerta DESCONOCIDA de este diseño tiene un "
+      + "experimento pendiente que investigar: los huecos que aparecieron "
+      + "arriba, si los hay, son por alcance de diseño o ya están agotados.";
+    cont.appendChild(p);
+    return;
+  }
+
+  const abiertos = [];
+  const agotados = [];
+  for (const [compuerta, texto] of vistos) {
+    if (texto.startsWith(PREFIJO_AGOTADO)) {
+      agotados.push([compuerta, texto]);
+    } else {
+      abiertos.push([compuerta, texto]);
+    }
+  }
+
+  const grupo = (titulo, items, clase) => {
+    if (items.length === 0) return;
+    const div = document.createElement("div");
+    div.className = `grupo-que-investigar ${clase}`;
+    const h3 = document.createElement("h3");
+    h3.textContent = titulo;
+    div.appendChild(h3);
+    for (const [compuerta, texto] of items) {
+      const item = document.createElement("div");
+      item.className = "item-que-investigar";
+      item.innerHTML = `<span class="nombre">${compuerta}</span>
+        <div class="texto">${texto}</div>`;
+      div.appendChild(item);
+    }
+    cont.appendChild(div);
+  };
+
+  grupo("Huecos abiertos — vale la pena investigar", abiertos, "abierto");
+  grupo("Huecos agotados — no repetir búsqueda", agotados, "agotado");
 }
 
 $("boton-evaluar").addEventListener("click", evaluar);
