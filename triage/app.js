@@ -6,6 +6,7 @@
 // ya las trae, no hace falta empaquetarlas.
 const ARCHIVOS_MOTOR = [
   "nanotransportador.py",
+  "farmaco.py",
   "glicocalix.py",
   "envolvimiento_core.py",
   "rutas.py",
@@ -32,8 +33,10 @@ const CAMPOS_CONOCIDOS = {
             defecto: -5},
   peg_nm: {etiqueta: "Espesor de PEG", unidad: "nm", paso: "0.1", requerido: false,
            defecto: 0},
-  farmaco_diametro_nm: {etiqueta: "Diámetro del fármaco (fingolimod)", unidad: "nm",
-                        paso: "0.001", requerido: false, defecto: 1.683},
+  // farmaco_diametro_nm NO se renderiza como número libre: se resuelve
+  // eligiendo un fármaco en el fieldset "Fármaco" (ver elegirSubtipo() /
+  // poblarFarmacos()), que manda `farmaco` (el nombre) en vez de un
+  // diámetro a mano.
 };
 
 const NOMBRES_RUTA_CORTOS = {
@@ -47,6 +50,7 @@ let pyodide = null;
 let catalogo = null;
 let categoriaElegida = null;
 let subtipoElegido = null;
+let farmacoElegido = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -145,9 +149,49 @@ function elegirSubtipo(subtipo) {
   subtipoElegido = subtipo;
   const ficha = (catalogo.subtipos_por_categoria[categoriaElegida] || [])
     .find((f) => f.subtipo === subtipo);
-  renderizarParametros(ficha ? ficha.parametros : []);
+  const parametros = ficha ? ficha.parametros : [];
+
+  // farmaco_diametro_nm ya NO se pide como número libre: se resuelve
+  // eligiendo un fármaco del catálogo (fieldset "Fármaco"), que rutas.py
+  // traduce a su diámetro vía construir_diseno(). El resto de parámetros
+  // sigue siendo la rejilla numérica de siempre.
+  const pideFarmaco = parametros.includes("farmaco_diametro_nm");
+  renderizarParametros(parametros.filter((p) => p !== "farmaco_diametro_nm"));
+
+  if (pideFarmaco) {
+    poblarFarmacos();
+    $("fieldset-farmaco").classList.remove("oculto");
+  } else {
+    farmacoElegido = null;
+    $("fieldset-farmaco").classList.add("oculto");
+  }
+
   $("fieldset-parametros").classList.remove("oculto");
   $("boton-evaluar").disabled = false;
+}
+
+function poblarFarmacos() {
+  const farmacos = catalogo.farmacos || [];
+  const cont = $("opciones-farmaco");
+  cont.innerHTML = "";
+
+  for (const [i, ficha] of farmacos.entries()) {
+    const id = `farmaco-${ficha.farmaco}`;
+    const label = document.createElement("label");
+    label.innerHTML = `<input type="radio" name="farmaco" id="${id}" value="${ficha.farmaco}"
+        ${i === 0 ? "checked" : ""}>
+      ${ficha.farmaco}`;
+    label.querySelector("input").addEventListener("change", () => {
+      farmacoElegido = ficha.farmaco;
+    });
+    cont.appendChild(label);
+  }
+
+  // El catálogo hoy solo tiene una entrada; se preselecciona igual que
+  // categoría/subtipo cuando solo hay una opción disponible, sin obligar a
+  // hacer clic. Cuando lleguen más fármacos, seguirá siendo el primero por
+  // defecto hasta que el usuario elija otro.
+  farmacoElegido = farmacos.length ? farmacos[0].farmaco : null;
 }
 
 function renderizarParametros(parametros) {
@@ -178,6 +222,12 @@ function leerParametros() {
     const valor = input.value.trim();
     if (valor === "") continue;
     params[campo] = Number(valor);
+  }
+  // No se manda farmaco_diametro_nm: se manda el NOMBRE del fármaco elegido
+  // y rutas.construir_diseno() lo resuelve vía farmaco.FARMACOS_SOPORTADOS
+  // (rechaza uno no catalogado antes de construir el diseño).
+  if (farmacoElegido !== null) {
+    params.farmaco = farmacoElegido;
   }
   return params;
 }

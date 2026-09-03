@@ -41,6 +41,7 @@ import numpy as np
 import envolvimiento_core as E
 import glicocalix as G
 import nanotransportador as N
+import farmaco as F
 
 PASA, FALLA, DESCONOCIDA = "PASA", "FALLA", "DESCONOCIDA"
 
@@ -69,6 +70,13 @@ class Diseno:
     # dimensión máxima y no el diámetro de esfera equivalente (0.858 nm).
     # Sustituye al «~1.0 nm sin fuente» que había hasta el 2026-08-13 [tarea C9].
     farmaco_diametro_nm: float = 1.683
+    # Nombre del fármaco en farmaco.FARMACOS_SOPORTADOS. Solo lo usa
+    # construir_diseno() para resolver farmaco_diametro_nm vía el catálogo
+    # cuando no se pasa explícito (ver construir_diseno); Diseno en sí no lo
+    # valida, igual que no valida `clase` — eso sigue siendo tarea del flujo
+    # de entrada validado, no del constructor permisivo que usan las pruebas
+    # de falsabilidad.
+    farmaco: str = "fingolimod"
     clase: str = "liposoma"            # liposoma | dendrimero | polimerico | micela
     nota: str = ""
     # Solo para clase="dendrimero" (tarea G.1a-bis). La ventana geométrica
@@ -114,8 +122,19 @@ def construir_diseno(categoria: str, subtipo: str, **kwargs) -> "Diseno":
     nanotransportador.SUBTIPOS_SOPORTADOS, con `nanotransportador.SubtipoNoSoportado`
     y su mensaje explícito. Así ningún parámetro libre de un subtipo sin
     catalogar llega nunca a evaluarse con las compuertas de otro subtipo.
+
+    También resuelve `farmaco` (nombre en farmaco.FARMACOS_SOPORTADOS) a su
+    `farmaco_diametro_nm` vía el catálogo, PERO solo si no se pasó
+    `farmaco_diametro_nm` explícito en kwargs: eso mantiene compatible a
+    quien construye con un diámetro ya calculado a mano (las pruebas de
+    falsabilidad, por ejemplo). Un fármaco no soportado se RECHAZA aquí,
+    antes de construir nada, con `farmaco.FarmacoNoSoportado`.
     """
     N.validar_subtipo(categoria, subtipo)
+    if "farmaco_diametro_nm" not in kwargs:
+        ficha = F.validar_farmaco(kwargs.get("farmaco", "fingolimod"))
+        kwargs["farmaco"] = ficha.nombre
+        kwargs["farmaco_diametro_nm"] = ficha.diametro_maximo_nm
     return Diseno(clase=subtipo, **kwargs)
 
 
@@ -983,6 +1002,31 @@ def test_metadatos_subtipo(verbose=True):
             "propias compuertas",
             ok_construido.clase == "liposoma"
             and ok_construido.categoria == "organico")
+    chequeo("construir_diseno resuelve farmaco_diametro_nm vía el catálogo "
+            "cuando no se pasa explícito",
+            ok_construido.farmaco == "fingolimod"
+            and ok_construido.farmaco_diametro_nm == 1.683)
+
+    # Un fármaco no catalogado se rechaza EXPLÍCITO, antes de construir nada:
+    # nunca se cuela con un diámetro inventado.
+    farmaco_rechazado = False
+    try:
+        construir_diseno("organico", "liposoma", nombre="x",
+                         diametro_nm=100.0, zeta_mV=0.0, farmaco="nocodazol")
+    except F.FarmacoNoSoportado:
+        farmaco_rechazado = True
+    chequeo("construir_diseno rechaza un fármaco no soportado antes de "
+            "construir el diseño, nunca se cuela con un diámetro inventado",
+            farmaco_rechazado)
+
+    # Si se pasa farmaco_diametro_nm explícito, el catálogo de fármaco no se
+    # consulta (compatibilidad con quien ya calculó el diámetro a mano).
+    ok_diametro_explicito = construir_diseno(
+        "organico", "liposoma", nombre="x", diametro_nm=100.0, zeta_mV=0.0,
+        farmaco_diametro_nm=2.5)
+    chequeo("construir_diseno respeta farmaco_diametro_nm explícito sin "
+            "consultar el catálogo de fármaco",
+            ok_diametro_explicito.farmaco_diametro_nm == 2.5)
 
     if verbose:
         print("-" * 78)
@@ -1941,6 +1985,12 @@ def catalogo_json():
             ]
             for cat in N.CATEGORIAS
         },
+        "farmacos": [
+            {"farmaco": nombre, "diametro_maximo_nm": ficha.diametro_maximo_nm,
+             "formula": ficha.formula, "masa_molar_da": ficha.masa_molar_da,
+             "fuente": ficha.fuente}
+            for nombre, ficha in sorted(F.FARMACOS_SOPORTADOS.items())
+        ],
     })
 
 
@@ -1962,7 +2012,7 @@ def evaluar_json(categoria, subtipo, params_json):
 
     try:
         d = construir_diseno(categoria, subtipo, **params)
-    except N.SubtipoNoSoportado as e:
+    except (N.SubtipoNoSoportado, F.FarmacoNoSoportado) as e:
         return json.dumps({"error": str(e)})
     except (TypeError, ValueError) as e:
         return json.dumps({"error": f"parámetro inválido: {e}"})
